@@ -102,3 +102,33 @@ d %>%
   geom_abline(data = post, aes(intercept = a, slope = b),
               alpha = 0.1)
 
+# Question 3 ----
+
+# Simulate prior predictive distribution
+set.seed(2971)
+N <- 30 # simulate 100 lines
+a <- rnorm(N, 178, 20 )
+b1 <- rnorm(N, 0, 1)
+b2 <- rnorm(N, 0, 0.1)
+
+# f = function(x, a, b1, b2){
+#   a + b1*x + b2*x^2
+# }
+#
+# df_prior = data.frame(a = a, b1 = b1, b2 = b2)
+
+xbar = mean(d$weight)
+
+plot( NULL , xlim=range(d$weight), ylim = c(-100,400),
+      xlab="weight" , ylab="height")
+abline( h=0 , lty=2 )
+abline( h=272 , lty=1 , lwd=0.5 )
+
+xbar <- mean(d$weight)
+for ( i in 1:N ) curve( a[i] + b1[i]*(x - xbar) + b2[i]*((x-xbar)^2),
+                        from=min(d$weight) , to=max(d$weight) , add=TRUE ,
+                        col=col.alpha("black",0.2) )
+
+
+
+
