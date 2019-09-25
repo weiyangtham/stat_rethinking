@@ -93,3 +93,12 @@ precis(mdl_hw2)
 
 cov2cor(vcov(mdl_hw2))
 
+# Plot posterior predictions against raw data
+post = extract.samples(mdl_hw2, n = 20)
+
+d %>%
+  ggplot(aes(weight_log_c, height_log)) +
+  geom_point() +
+  geom_abline(data = post, aes(intercept = a, slope = b),
+              alpha = 0.1)
+
