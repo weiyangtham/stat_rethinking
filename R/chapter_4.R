@@ -277,5 +277,21 @@ shade(mu.HPDI, weight.seq)
 ggplot(d, aes(weight, height)) + geom_point()
 
 # standardize weight
-d %<>% mutate(weight.s = (weight - mean(weight))/sd(weight))
+d %<>%
+  mutate(weight.s = (weight - mean(weight))/sd(weight),
+         weight.s2 = weight.s^2)
+
+m4.5 = map(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu <- a + b1*weight.s + b2*weight.s2,
+    a ~ dnorm(178, 100),
+    b1 ~ dnorm(0, 10),
+    b2 ~ dnorm(0, 10),
+    sigma ~ dunif(0, 50)
+  ),
+  data = d
+)
+
+precis(m4.5)
 
