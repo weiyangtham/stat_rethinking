@@ -60,5 +60,36 @@ apply(mu, 2, HPDI, prob = 0.89)
 
 # Question 2 ----
 
+d %<>%
+  mutate(weight_log = log(weight),
+         height_log = log(height),
+         weight_log_c = weight_log - mean(weight_log))
 
+head(d)
+
+ggplot(d) +
+  aes(weight_log_c, height_log) +
+  geom_point()
+
+ggplot(d) +
+  aes(weight_log) +
+  geom_histogram()
+
+ggplot(d) +
+  aes(height_log) +
+  geom_histogram()
+
+mdl_hw2 = map(
+  flist = alist(
+    height_log ~ dnorm(mu, sigma),
+    mu <- a + b*weight_log_c,
+    a ~ dnorm(0, 10),
+    b ~ dnorm(1, 0.2),
+    sigma ~ dunif(0, 50)
+  ),
+  data = d)
+
+precis(mdl_hw2)
+
+cov2cor(vcov(mdl_hw2))
 
