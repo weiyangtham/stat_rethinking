@@ -271,3 +271,272 @@ b12.5 <- add_criterion(b12.5, "loo")
 loo_compare(b12.4, b12.5) %>%
   print(simplify = F)
 
+# Posterior predictions for existing clusters ----
+
+chimp <- 2
+
+d <- as_tibble(d)
+
+d
+
+nd <- tibble(prosoc_left = c(1, 0, 1, 0),
+             condition = c(0, 0, 1, 1),
+             actor = chimp)
+
+fitted(b12.4, newdata = nd)
+
+chimp_2_fitted <-
+  fitted(b12.4,
+         newdata = nd) %>%
+  as_tibble() %>%
+  mutate(condition = factor(c("0/0", "1/0", "0/1", "1/1"),
+                            levels = c("0/0", "1/0", "0/1", "1/1")))
+
+chimp_2_fitted
+
+(
+  chimp_2_d <-
+    d %>%
+    filter(actor == chimp) %>%
+    group_by(prosoc_left, condition) %>%
+    summarise(prob = mean(pulled_left)) %>%
+    ungroup() %>%
+    mutate(condition = str_c(prosoc_left, "/", condition)) %>%
+    mutate(condition = factor(condition, levels = c("0/0", "1/0", "0/1", "1/1")))
+)
+
+chimp_2_fitted %>%
+  # if you want to use `geom_line()` or `geom_ribbon()` with a factor on the x axis,
+  # you need to code something like `group = 1` in `aes()`
+  ggplot(aes(x = condition, y = Estimate, group = 1)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "orange1") +
+  geom_line(color = "blue") +
+  geom_point(data = chimp_2_d,
+             aes(y = prob),
+             color = "grey25") +
+  ggtitle("Chimp #2",
+          subtitle = "The posterior mean and 95%\nintervals are the blue line\nand orange band, respectively.\nThe empirical means are\nthe charcoal dots.") +
+  coord_cartesian(ylim = c(.75, 1)) +
+  theme_fivethirtyeight() +
+  theme(plot.subtitle = element_text(size = 10))
+
+post <- posterior_samples(b12.4) %>% as_tibble()
+
+glimpse(post)
+
+post
+
+post %>% ggplot(aes(`r_actor[5,Intercept]`)) + geom_density()
+
+
+
+chimp_5_fitted <- post %>%
+  uncount(4) %>%
+  bind_cols(uncount(nd %>% select(-actor), nrow(post))) %>%
+  mutate(fitted = (b_Intercept +
+                        `r_actor[5,Intercept]` +
+                        b_prosoc_left * prosoc_left +
+                        `b_prosoc_left:condition` * prosoc_left * condition) %>%
+              inv_logit_scaled())
+
+chimp_5_fitted <- chimp_5_fitted %>%
+  mutate(condition = str_c(prosoc_left, "/", condition)) %>%
+  mutate(condition = factor(condition, levels = c("0/0", "1/0", "0/1", "1/1")))
+
+chimp_5_fitted %>%
+  group_by(condition) %>%
+  tidybayes::mean_qi(fitted)
+
+chimp_5_my_fitted %>%
+  ggplot(aes(x = condition, y = fitted, group = 1)) +
+  geom_ribbon(aes(ymin = .lower, ymax = .upper), fill = "orange1") +
+  geom_line(color = "blue") +
+  geom_point(data = chimp_5_d,
+             aes(y = prob),
+             color = "grey25") +
+  ggtitle("Chimp #5",
+          subtitle = "This plot is like the last except\nwe did more by hand.") +
+  coord_cartesian(ylim = 0:1) +
+  theme_fivethirtyeight() +
+  theme(plot.subtitle = element_text(size = 10))
+
+# Posterior prediction for new clusters ----
+
+post_average_actor <-
+  post %>%
+  # here we use the linear regression formula to get the log_odds for the 4 conditions
+  transmute(`0/0` = b_Intercept,
+            `1/0` = b_Intercept + b_prosoc_left,
+            `0/1` = b_Intercept,
+            `1/1` = b_Intercept + b_prosoc_left + `b_prosoc_left:condition`) %>%
+  # with `mutate_all()` we can convert the estimates to probabilities in one fell swoop
+  mutate_all(inv_logit_scaled) %>%
+  # putting the data in the long format and grouping by condition (i.e., `key`)
+  gather() %>%
+  mutate(key = factor(key, level = c("0/0", "1/0", "0/1", "1/1"))) %>%
+  group_by(key) %>%
+  # here we get the summary values for the plot
+  summarise(m  = mean(value),
+            # note we're using 80% intervals
+            ll = quantile(value, probs = .1),
+            ul = quantile(value, probs = .9))
+
+post_average_actor
+
+p1 <-
+  post_average_actor %>%
+  ggplot(aes(x = key, y = m, group = 1)) +
+  geom_ribbon(aes(ymin = ll, ymax = ul), fill = "orange1") +
+  geom_line(color = "blue") +
+  ggtitle("Average actor") +
+  coord_cartesian(ylim = 0:1) +
+  theme_fivethirtyeight() +
+  theme(plot.title = element_text(size = 14, hjust = .5))
+
+p1
+
+set.seed(12.42)
+ran_ef <-
+  tibble(random_effect = rnorm(n = 1000, mean = 0, sd = post$sd_actor__Intercept)) %>%
+  # uncount(4)
+  bind_rows(., ., ., .)
+
+fix_ef <-
+  post %>%
+  slice(1:1000) %>%
+  transmute(`0/0` = b_Intercept,
+            `1/0` = b_Intercept + b_prosoc_left,
+            `0/1` = b_Intercept,
+            `1/1` = b_Intercept + b_prosoc_left + `b_prosoc_left:condition`) %>%
+  gather() %>%
+  rename(condition    = key,
+         fixed_effect = value) %>%
+  mutate(condition = factor(condition, level = c("0/0", "1/0", "0/1", "1/1")))
+
+ran_and_fix_ef <-
+  bind_cols(ran_ef, fix_ef) %>%
+  mutate(intercept = fixed_effect + random_effect) %>%
+  mutate(prob      = inv_logit_scaled(intercept))
+
+(
+  marginal_effects <-
+    ran_and_fix_ef %>%
+    group_by(condition) %>%
+    summarise(m  = mean(prob),
+              ll = quantile(prob, probs = .1),
+              ul = quantile(prob, probs = .9))
+)
+
+p2 <-
+  marginal_effects %>%
+  ggplot(aes(x = condition, y = m, group = 1)) +
+  geom_ribbon(aes(ymin = ll, ymax = ul), fill = "orange1") +
+  geom_line(color = "blue") +
+  ggtitle("Marginal of actor") +
+  coord_cartesian(ylim = 0:1) +
+  theme_fivethirtyeight() +
+  theme(plot.title = element_text(size = 14, hjust = .5))
+
+p2
+
+p3 <-
+  ran_and_fix_ef %>%
+  mutate(iter = rep(1:1000, times = 4)) %>%
+  filter(iter %in% c(1:50)) %>%
+
+  ggplot(aes(x = condition, y = prob, group = iter)) +
+  theme_fivethirtyeight() +
+  ggtitle("50 simulated actors") +
+  coord_cartesian(ylim = 0:1) +
+  geom_line(alpha = 1/2, color = "orange3") +
+  theme(plot.title = element_text(size = 14, hjust = .5))
+
+p3
+
+# using fitted() to fit new clusters ----
+nd <-
+  tibble(prosoc_left = c(0, 1, 0, 1),
+         condition   = c(0, 0, 1, 1))
+
+(
+  f <-
+    fitted(b12.4,
+           newdata = nd,
+           re_formula = NA,
+           probs = c(.1, .9)) %>%
+    as_tibble() %>%
+    bind_cols(nd) %>%
+    mutate(condition = str_c(prosoc_left, "/", condition) %>%
+             factor(., levels = c("0/0", "1/0", "0/1", "1/1")))
+)
+
+p4 <-
+  f %>%
+  ggplot(aes(x = condition, y = Estimate, group = 1)) +
+  geom_ribbon(aes(ymin = Q10, ymax = Q90), fill = "blue") +
+  geom_line(color = "orange1") +
+  ggtitle("Average actor") +
+  coord_cartesian(ylim = 0:1) +
+  theme_fivethirtyeight() +
+  theme(plot.title = element_text(size = 14, hjust = .5))
+
+p4
+
+(
+  f <-
+    fitted(b12.4,
+           newdata = nd,
+           probs = c(.1, .9),
+           allow_new_levels = T,
+           sample_new_levels = "gaussian") %>%
+    as_tibble() %>%
+    bind_cols(nd) %>%
+    mutate(condition = str_c(prosoc_left, "/", condition) %>%
+             factor(., levels = c("0/0", "1/0", "0/1", "1/1")))
+)
+
+p5 <-
+  f %>%
+  ggplot(aes(x = condition, y = Estimate, group = 1)) +
+  geom_ribbon(aes(ymin = Q10, ymax = Q90), fill = "blue") +
+  geom_line(color = "orange1") +
+  ggtitle("Marginal of actor") +
+  coord_cartesian(ylim = 0:1) +
+  theme_fivethirtyeight() +
+  theme(plot.title = element_text(size = 14, hjust = .5))
+
+p5
+
+n_sim <- 50
+
+(
+  f <-
+    fitted(b12.4,
+           newdata = nd,
+           # probs = c(.1, .9),
+           allow_new_levels = T,
+           sample_new_levels = "gaussian",
+           summary = F,
+           nsamples = n_sim) %>%
+    as_tibble() %>%
+    mutate(iter = 1:n_sim) %>%
+    gather(key, value, -iter) %>%
+    bind_cols(nd %>%
+                transmute(condition = str_c(prosoc_left, "/", condition) %>%
+                            factor(., levels = c("0/0", "1/0", "0/1", "1/1"))) %>%
+                expand(condition, iter = 1:n_sim))
+)
+
+p6 <-
+  f %>%
+
+  ggplot(aes(x = condition, y = value, group = iter)) +
+  geom_line(alpha = 1/2, color = "blue") +
+  ggtitle("50 simulated actors") +
+  coord_cartesian(ylim = 0:1) +
+  theme_fivethirtyeight() +
+  theme(plot.title = element_text(size = 14, hjust = .5))
+
+p6
+
+# Focus ----
