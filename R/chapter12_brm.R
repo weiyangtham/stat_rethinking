@@ -540,3 +540,52 @@ p6 <-
 p6
 
 # Focus ----
+
+data(Kline)
+detach(package:rethinking, unload = T)
+
+d <- Kline
+
+b12.6 <- brm(formula = total_tools ~ 0 + Intercept + (1 | culture) + log(population), data = d,
+             prior = c(prior(normal(0, 10), class = b, coef = Intercept),
+                       prior(normal(0, 1), class = b),
+                       prior(cauchy(0, 1), class = sd)),
+             family = poisson(),
+             iter = 4000, warmup = 1000, cores = 3, chains = 3,
+             seed = 12)
+
+
+nd <-
+  tibble(population = seq(from = 1000, to = 400000, by = 5000),
+         # to "simulate counterfactual societies, using the hyper-parameters" (p. 383),
+         # we'll plug a new island into the `culture` variable
+         culture    = "my_island")
+
+set.seed(1038)
+d_pred <- fitted(b12.6,
+       newdata = nd,
+       re_formula = ~(1 | culture), # want the random effects
+       probs = c(.015, .055, .165, .835, .945, .985),
+       allow_new_levels = T,
+       sample_new_levels = "gaussian") %>%
+  as_tibble() %>%
+  bind_cols(nd)
+
+d_pred
+
+d_pred %>%
+  ggplot(aes(x = log(population), y = Estimate)) +
+  geom_ribbon(aes(ymin = Q1.5,  ymax = Q98.5), fill = "orange2", alpha = 1/3) +
+  geom_ribbon(aes(ymin = Q5.5,  ymax = Q94.5), fill = "orange2", alpha = 1/3) +
+  geom_ribbon(aes(ymin = Q16.5, ymax = Q83.5), fill = "orange2", alpha = 1/3) +
+  geom_line(color = "orange4") +
+  geom_text(data = d, aes(y = total_tools, label = culture),
+            size = 2.33, color = "blue") +
+  ggtitle("Total tools as a function of log(population)") +
+  coord_cartesian(ylim = range(d$total_tools)) +
+  theme_fivethirtyeight() +
+  theme(plot.title = element_text(size = 12, hjust = .5))
+
+# tidybayes::spread_draws ----
+
+
