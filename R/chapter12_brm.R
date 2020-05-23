@@ -588,4 +588,146 @@ d_pred %>%
 
 # tidybayes::spread_draws ----
 
+b12.4$formula
 
+b12.4$data %>%
+  glimpse()
+
+# fit an intercepts only model
+b12.7 <- brm(data = b12.4$data, family = binomial(),
+             formula = pulled_left | trials(1) ~ 1 + (1 | actor),
+             prior = c(prior(normal(0, 10), class = Intercept),
+                       prior(cauchy(0, 1), class = sd)),
+             iter = 5000, warmup = 1000, chains = 4, cores = 4,
+             control = list(adapt_delta = 0.95),
+             seed = 12)
+
+print(b12.7)
+
+b12.5$formula
+
+b12.8 <-
+  brm(data = b12.5$data, family = binomial,
+      pulled_left | trials(1) ~ 1 + (1 | actor) + (1 | block),
+      prior = c(prior(normal(0, 10), class = Intercept),
+                prior(cauchy(0, 1), class = sd)),
+      iter = 5000, warmup = 1000, chains = 4, cores = 4,
+      control = list(adapt_delta = 0.95),
+      seed = 12)
+
+posterior_samples(b12.7) %>% str()
+
+posterior_samples(b12.7) %>%
+  transmute(`chimp 1's average probability of pulling left` = (b_Intercept + `r_actor[1,Intercept]`) %>% inv_logit_scaled()) %>%
+  head()
+
+p1 <-
+  posterior_samples(b12.7) %>%
+  transmute(`chimp 1's average probability of pulling left` = b_Intercept + `r_actor[1,Intercept]`,
+            `chimp 2's average probability of pulling left` = b_Intercept + `r_actor[2,Intercept]`,
+            `chimp 3's average probability of pulling left` = b_Intercept + `r_actor[3,Intercept]`,
+            `chimp 4's average probability of pulling left` = b_Intercept + `r_actor[4,Intercept]`,
+            `chimp 5's average probability of pulling left` = b_Intercept + `r_actor[5,Intercept]`,
+            `chimp 6's average probability of pulling left` = b_Intercept + `r_actor[6,Intercept]`,
+            `chimp 7's average probability of pulling left` = b_Intercept + `r_actor[7,Intercept]`) %>%
+  mutate_all(inv_logit_scaled)
+
+str(p1)
+
+posterior_samples(b12.8) %>% glimpse()
+
+p2 <-
+  posterior_samples(b12.8) %>%
+  transmute(`chimp 1's average probability of pulling left` = b_Intercept + `r_actor[1,Intercept]`,
+            `chimp 2's average probability of pulling left` = b_Intercept + `r_actor[2,Intercept]`,
+            `chimp 3's average probability of pulling left` = b_Intercept + `r_actor[3,Intercept]`,
+            `chimp 4's average probability of pulling left` = b_Intercept + `r_actor[4,Intercept]`,
+            `chimp 5's average probability of pulling left` = b_Intercept + `r_actor[5,Intercept]`,
+            `chimp 6's average probability of pulling left` = b_Intercept + `r_actor[6,Intercept]`,
+            `chimp 7's average probability of pulling left` = b_Intercept + `r_actor[7,Intercept]`) %>%
+  mutate_all(inv_logit_scaled)
+
+str(p2)
+
+
+p3 <-
+  posterior_samples(b12.8) %>%
+  transmute(`chimp 1's average probability of pulling left` = b_Intercept + `r_actor[1,Intercept]` + `r_block[1,Intercept]`,
+            `chimp 2's average probability of pulling left` = b_Intercept + `r_actor[2,Intercept]` + `r_block[1,Intercept]`,
+            `chimp 3's average probability of pulling left` = b_Intercept + `r_actor[3,Intercept]` + `r_block[1,Intercept]`,
+            `chimp 4's average probability of pulling left` = b_Intercept + `r_actor[4,Intercept]` + `r_block[1,Intercept]`,
+            `chimp 5's average probability of pulling left` = b_Intercept + `r_actor[5,Intercept]` + `r_block[1,Intercept]`,
+            `chimp 6's average probability of pulling left` = b_Intercept + `r_actor[6,Intercept]` + `r_block[1,Intercept]`,
+            `chimp 7's average probability of pulling left` = b_Intercept + `r_actor[7,Intercept]` + `r_block[1,Intercept]`) %>%
+  mutate_all(inv_logit_scaled)
+
+str(p3)
+
+
+coef(b12.7)
+
+c1 <-
+  coef(b12.7, summary = F)$actor[, , ] %>%
+  as_tibble() %>%
+  gather() %>%
+  mutate(key   = str_c("chimp ", key, "'s average probability of pulling left"),
+         value = inv_logit_scaled(value),
+         # we need an iteration index for `spread()` to work properly
+         iter  = rep(1:16000, times = 7)) %>%
+  spread(key = key, value = value)
+
+str(c1)
+
+c2 <-
+  coef(b12.8, summary = F)$actor[, , ] %>%
+  as_tibble() %>%
+  gather() %>%
+  mutate(key   = str_c("chimp ", key, "'s average probability of pulling left"),
+         value = inv_logit_scaled(value),
+         iter  = rep(1:16000, times = 7)) %>%
+  spread(key = key, value = value)
+
+c2
+
+coef(b12.8)
+
+ranef(b12.8)
+
+(nd <- b12.7$data %>% distinct(actor))
+
+f1 <-
+  fitted(b12.7,
+         newdata = nd,
+         summary = F,
+         # within `fitted()`, this line does the same work that
+         # `inv_logit_scaled()` did with the other two methods
+         scale = "response") %>%
+  as_tibble() %>%
+  set_names(str_c("chimp ", 1:7, "'s average probability of pulling left"))
+
+str(f1)
+
+library(tidybayes)
+b12.7 %>%
+  spread_draws(b_Intercept, r_actor[actor,]) %>%
+  filter(actor %in% c(1, 3))
+
+b12.7 %>%
+  spread_draws(b_Intercept, r_actor[actor,]) %>%
+  ungroup() %>%
+  select(.chain:.draw) %>%
+  gather() %>%
+  group_by(key) %>%
+  summarise(min = min(value),
+            max = max(value))
+
+s1 <-
+  b12.7 %>%
+  spread_draws(b_Intercept, r_actor[actor,]) %>%
+  mutate(p = (b_Intercept + r_actor) %>% inv_logit_scaled()) %>%
+  select(.draw, actor, p) %>%
+  ungroup() %>%
+  mutate(actor = str_c("chimp ", actor, "'s average probability of pulling left")) %>%
+  spread(value = p, key = actor)
+
+s1
